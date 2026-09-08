@@ -98,3 +98,25 @@ class WebhookTests(unittest.TestCase):
         from unittest.mock import patch
         with patch('src.webhook_server.time.monotonic', side_effect=[0, 11]):
             self.assertEqual(self.request(None, self.headers())[0], 503)
+
+    def test_default_rejects_over_service_limit_before_body_read(self):
+        server = make_server(None, 'secret', port=0)
+        thread = threading.Thread(target=server.handle_request)
+        thread.start()
+        connection = http.client.HTTPConnection(*server.server_address, timeout=3)
+        try:
+            # Declare one byte over the service limit but send no body: rejection
+            # must happen from headers alone, before a read or ingest call.
+            connection.request('POST', '/webhook', headers={'Content-Length':'1000001'})
+            response = connection.getresponse()
+            self.assertEqual(response.status, 413)
+            response.read()
+        finally:
+            connection.close()
+            thread.join(3)
+            server.server_close()
+        self.assertFalse(thread.is_alive())
+
+    def test_config_cannot_exceed_service_limit(self):
+        with self.assertRaises(ValueError):
+            make_server(None, 'secret', port=0, max_body=1_000_001)

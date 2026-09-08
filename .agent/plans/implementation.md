@@ -29,3 +29,6 @@ Canonical normalized event: repository, run_id, attempt, sha, branch, workflow_i
 
 ## Validation
 Standard-library Python unittest suite; mocked HTTP/clock tests; replay/dedup/tamper/auth/concurrency failures; exact run-state verification; no live mutating tests. Workflow syntax validation and real hosted check readback after PR. Local test database only: no new platform service or corpus processing.
+
+## Delivery and review receipts
+PR #3, child #2, umbrella #1. Initial hosted validation passed and a read-only live probe persisted three observations with valid audit chain and no actions. Review follow-up fixes selected-policy classification, verified action report denominators, consistent payload limits and explicit operator abandonment of uncertain reservations without budget refunds or resubmission. Local suite: 65 tests passed. Production rollout and measured targets remain open; Bugbot was unable to run due spend limit, not a passed review.

@@ -8,9 +8,9 @@ from typing import Any
 
 
 def make_server(service: Any, secret: str | bytes, host: str = "127.0.0.1", port: int = 8788,
-                *, max_body: int = 1_048_576) -> HTTPServer:
+                *, max_body: int = 1_000_000) -> HTTPServer:
     """Build an HTTP receiver. TLS belongs at a trusted reverse proxy."""
-    if not secret or not 1 <= max_body <= 10_485_760:
+    if not secret or not 1 <= max_body <= 1_000_000:
         raise ValueError("Secret and bounded body size required")
 
     secret_bytes = secret.encode("utf-8") if isinstance(secret, str) else secret

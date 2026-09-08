@@ -52,7 +52,7 @@ class Babysitter:
             raise PermissionError('Repository not opted in')
         identity = {k: clean[k] for k in ('repository','run_id','attempt','sha','status','conclusion')}
         key = hashlib.sha256(canonical(identity).encode()).hexdigest()
-        decision = classify({**clean, 'evidence': event.get('evidence', []), 'history': event.get('history', [])})
+        decision = classify({**clean, 'evidence': event.get('evidence', []), 'history': event.get('history', [])}, policy=self.policy)
         decision.update(mode='proposal', executed=False)
         return self.store.record(key, delivery_id or 'poll-' + key, payload_sha or hashlib.sha256(canonical(clean).encode()).hexdigest(), clean, decision)
 

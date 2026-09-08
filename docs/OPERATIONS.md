@@ -23,6 +23,12 @@ Audit exports include event, decision, action and outcome state plus chain verif
 ## Enabling retries later
 Review exact repository/workflow IDs and set dry_run false only after a dedicated write-scoped token is configured. Submit a persisted event with `python -m src.cli retry --event-key <key>` and reconcile with `python -m src.cli reconcile --action-key <key>`. There is deliberately no unattended mutation loop enabled by deployment. A future dispatcher must use this same durable reservation boundary rather than bypass it. Retry counters survive restarts and uncertain actions consume their budget. Raising configured max_retries above three is rejected.
 
+## Closing an unresolved reservation safely
+
+A crash after reservation may leave `reserved` forever; a lost provider response may leave `uncertain`. Neither permits blind re-submission. An authenticated operator may close the investigation through `RemediationEngine.abandon(action_key, operator=..., reason=..., executor_quiesced=True)` after stopping and joining **all** action-submitting workers and inspecting provider run history. The explicit quiescence attestation is not a distributed lock and cannot cancel an in-flight request. Keep identity/reason free of credentials, raw logs and sensitive data; use an incident reference.
+
+Abandonment appends an `action-abandoned` audit marker; it preserves the original provider state as unresolved, retains the reservation and consumed retry budget, and prevents this attempt being submitted again. `retry` duplicate lookup and `reconcile` report `abandoned`, never success or provider rejection. This is administrative closure, not proof the provider did nothing. Do not delete action rows, reset counters or modify the database to retry the same attempt. Any manual provider action requires separate approved review; observe its subsequent attempt normally. Audit exports retain both the original state and closure marker. Reports reading raw action states must inspect that marker rather than count abandoned reservations as outstanding work.
+
 ## Current rollout boundaries
 This release delivers monitoring adapters, receiver, heuristics, ledger, retry executor, report/runbook generation and tests. It does not claim that webhooks are installed across the org, latency/accuracy/success targets are achieved, Slack/issue escalation is scheduled, or high-trust actions are approved. Production storage/retention/role separation and labeled accuracy evaluation remain tracked in issue #1.
 

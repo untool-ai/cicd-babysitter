@@ -11,6 +11,36 @@ class RemediationEngine:
     def __init__(self, store, client, policy, clock=time.time):
         self.store, self.client, self.policy, self.clock = store, client, policy, clock
 
+    def _abandoned(self, key):
+        return self.store.db.execute(
+            "SELECT 1 FROM audit WHERE kind='action-abandoned' AND subject=? LIMIT 1",
+            (key,)).fetchone() is not None
+
+    def abandon(self, key, *, operator, reason, executor_quiesced=False):
+        """Administrative closure only: never cancel, refund, retry or assert outcome.
+
+        Caller must authenticate the operator and stop/join submitting workers first.
+        The quiesced flag is an explicit attestation, not a distributed lock.
+        """
+        if executor_quiesced is not True:
+            raise PermissionError('Stop and join action executors before abandonment')
+        if any(not isinstance(v, str) or not v.strip() or len(v) > 256
+               for v in (operator, reason)):
+            raise ValueError('Bounded operator identity and non-secret reason required')
+        with self.store.transaction():
+            row = self.store.db.execute('SELECT state FROM actions WHERE action_key=?', (key,)).fetchone()
+            if not row:
+                raise ValueError('Unknown action')
+            if self._abandoned(key):
+                return {'state':'abandoned','action_key':key,'duplicate':True,'verified':False}
+            if row['state'] not in ('reserved','uncertain'):
+                raise ValueError('Only unresolved reserved or uncertain actions may be abandoned')
+            self.store.audit('action-abandoned', key, {
+                'operator':operator, 'reason':reason, 'prior_state':row['state'],
+                'executor_quiesced_attested':True, 'budget_retained':True,
+                'outcome':'unknown; abandonment does not cancel provider work'})
+        return {'state':'abandoned','action_key':key,'verified':False,'budget_retained':True}
+
     def _refuse(self, event, state, reason):
         with self.store.transaction():
             self.store.audit('action-not-executed', f"{event['repository']}:{event['run_id']}", {'state':state,'reason':reason})
@@ -45,7 +75,7 @@ class RemediationEngine:
         now = self.clock()
         with self.store.transaction():
             prior = self.store.db.execute('SELECT state FROM actions WHERE action_key=?', (key,)).fetchone()
-            if prior: return {'state': prior['state'], 'duplicate': True, 'action_key': key}
+            if prior: return {'state': 'abandoned' if self._abandoned(key) else prior['state'], 'duplicate': True, 'action_key': key}
             used = self.store.db.execute('SELECT COUNT(*),MAX(created) FROM actions WHERE incident=?', (incident,)).fetchone()
             if used[0] >= cap:
                 self.store.audit('action-not-executed',event_key,{'reason':'Retry budget exhausted'})
@@ -72,6 +102,8 @@ class RemediationEngine:
     def reconcile(self, key):
         row = self.store.db.execute('SELECT * FROM actions WHERE action_key=?', (key,)).fetchone()
         if not row: raise ValueError('Unknown action')
+        if self._abandoned(key):
+            return {'state':'abandoned','verified':False,'budget_retained':True}
         if row['state'] in ('verified_success','verified_failure','rejected'):
             return {'state':row['state']}
         current = self.client.get_run(row['repository'], row['run_id'])

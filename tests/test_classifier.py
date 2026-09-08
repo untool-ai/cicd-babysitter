@@ -96,6 +96,56 @@ class ClassifierTests(unittest.TestCase):
         self.assertEqual(classify(sample), classify(sample))
         self.assertEqual(sample, original)
 
+    def test_selected_policy_removes_signature_without_mutating_defaults(self):
+        selected = {"version": "custom-v2", "transient_signatures": []}
+        before = copy.deepcopy(selected)
+        result = classify(event(["timeout"]), policy=selected)
+        self.assertEqual(result["category"], "unknown")
+        self.assertEqual(result["action"], "investigate")
+        self.assertEqual(result["rule"], "custom-v2:insufficient-evidence")
+        self.assertEqual(selected, before)
+        self.assertEqual(classify(event(["timeout"]))["action"], "retry")
+
+    def test_selected_policy_thresholds_and_security_are_used(self):
+        selected = {"version": "custom-v2", "systemic_min_samples": 30,
+                    "flaky_min_samples": 30, "security_signatures": ["CUSTOM SECURITY SIGNAL"]}
+        self.assertEqual(classify(event(history=[False] * 10), selected)["category"], "unknown")
+        self.assertEqual(classify(event(history=[True] * 10 + [False] * 10), selected)["category"], "unknown")
+        result = classify(event(["custom security signal"], conclusion="success"), selected)
+        self.assertEqual(result["category"], "security")
+        self.assertEqual(result["action"], "escalate")
+
+    def test_invalid_selected_policy_cannot_silently_use_defaults(self):
+        for invalid in [[], {"transient_signatures": None}, {"transient_signatures": [""]},
+                        {"systemic_min_samples": 0}, {"flaky_min_samples": True},
+                        {"flaky_success_rate_min": float("nan")}, {"version": None}]:
+            with self.subTest(policy=invalid), self.assertRaises(ValueError):
+                classify(event(["timeout"]), invalid)
+
+    def test_babysitter_observe_uses_selected_policy(self):
+        import sys
+        import tempfile
+        sys.path.insert(0, str(ROOT))
+        try:
+            from src.babysitter_agent import Babysitter
+            with tempfile.TemporaryDirectory() as directory:
+                policy = {"allowed_repositories": ["untool-ai/fixture"], "version": "selected-v3",
+                          "transient_signatures": []}
+                agent = Babysitter(str(Path(directory) / "events.sqlite"), policy)
+                try:
+                    sample = {**event(["timeout"]), "repository": "untool-ai/fixture", "run_id": 1,
+                              "attempt": 1, "workflow_id": 1, "sha": "a" * 40,
+                              "branch": "main", "status": "completed"}
+                    decision = agent.observe(sample)["decision"]
+                    self.assertEqual(decision["category"], "unknown")
+                    self.assertEqual(decision["action"], "investigate")
+                    self.assertEqual(decision["rule"], "selected-v3:insufficient-evidence")
+                    self.assertFalse(decision["executed"])
+                finally:
+                    agent.close()
+        finally:
+            sys.path.pop(0)
+
     def test_ruleset_is_versioned_json_yaml_subset(self):
         config = json.loads((ROOT / "config" / "org-ruleset.yaml").read_text(encoding="utf-8-sig"))
         self.assertEqual(config["version"], "1.0.0")

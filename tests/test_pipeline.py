@@ -121,5 +121,45 @@ class PipelineTests(unittest.TestCase):
         result=self.engine.retry(event(),self.decision)
         self.assertEqual(result['state'],'verified_success')
 
+    def test_abandon_uncertain_is_durable_no_refund_no_resubmit(self):
+        self.client.error=True
+        key=self.engine.retry(event())['action_key']
+        with self.assertRaises(PermissionError):
+            self.engine.abandon(key,operator='operator-1',reason='reviewed')
+        result=self.engine.abandon(key,operator='operator-1',reason='provider outcome unavailable',executor_quiesced=True)
+        self.assertEqual(result['state'],'abandoned')
+        self.assertTrue(result['budget_retained'])
+        self.assertTrue(self.engine.abandon(key,operator='operator-1',reason='reviewed',executor_quiesced=True)['duplicate'])
+        self.assertEqual(self.engine.retry(event())['state'],'abandoned')
+        self.assertEqual(self.client.calls,1)
+        self.agent.close();self.agent=Babysitter(self.path,self.policy)
+        self.engine=RemediationEngine(self.agent.store,self.client,self.policy)
+        self.assertEqual(self.engine.reconcile(key)['state'],'abandoned')
+        self.policy['max_retries']=1
+        self.client.current['run_attempt']=2
+        self.agent.observe(event(2))
+        self.assertEqual(self.engine.retry(event(2))['reason'],'Retry budget exhausted')
+        self.assertTrue(self.agent.store.verify())
+
+    def test_abandon_reserved_is_atomic_and_does_not_claim_provider_rejection(self):
+        key=self.engine.retry(event())['action_key']
+        self.agent.store.db.execute("UPDATE actions SET state='reserved' WHERE action_key=?",(key,))
+        original=self.agent.store.audit
+        self.agent.store.audit=lambda *args: (_ for _ in ()).throw(OSError('fixture'))
+        with self.assertRaises(OSError):
+            self.engine.abandon(key,operator='operator-1',reason='reviewed',executor_quiesced=True)
+        self.assertFalse(self.engine._abandoned(key))
+        self.agent.store.audit=original
+        self.engine.abandon(key,operator='operator-1',reason='reviewed',executor_quiesced=True)
+        self.assertEqual(self.agent.store.db.execute('SELECT state FROM actions').fetchone()[0],'reserved')
+        self.assertEqual(self.engine.reconcile(key)['state'],'abandoned')
+
+    def test_abandon_rejects_known_outcomes_and_missing_identity(self):
+        key=self.engine.retry(event())['action_key']
+        with self.assertRaises(ValueError):
+            self.engine.abandon(key,operator='operator-1',reason='reviewed',executor_quiesced=True)
+        with self.assertRaises(ValueError):
+            self.engine.abandon(key,operator='',reason='reviewed',executor_quiesced=True)
+
 
 if __name__=='__main__': unittest.main()

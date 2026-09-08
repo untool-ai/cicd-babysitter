@@ -23,7 +23,27 @@ def parser():
     report = sub.add_parser('report'); report.add_argument('--runbook', action='store_true')
     retry = sub.add_parser('retry'); retry.add_argument('--event-key', required=True)
     reconcile = sub.add_parser('reconcile'); reconcile.add_argument('--action-key', required=True)
+    abandon = sub.add_parser('abandon'); abandon.add_argument('--action-key', required=True); abandon.add_argument('--operator', required=True); abandon.add_argument('--reason', required=True); abandon.add_argument('--executor-quiesced', action='store_true')
     return p
+
+
+def ledger_report(exported):
+    records = [{'event': json.loads(row['event_json']), 'decision': json.loads(row['decision_json']), 'received_at': row['received_at']} for row in exported['events']]
+    report = summarize(records)
+    # Separate denominators: actions are not additional workflow observations.
+    outcomes = [{'event': {}, 'outcome': {'verified': True, 'success': row['state'] == 'verified_success'}}
+                if row['state'] in ('verified_success', 'verified_failure') else {'event': {}}
+                for row in exported['actions']]
+    action_metrics = summarize(outcomes)
+    report['verified_remediation'] = action_metrics['verified_remediation']
+    report['remediation_latency'] = action_metrics['remediation_latency']
+    report['remediation_sample_basis'] = 'durable-action-records; subsequent-run-observed-not-exclusive-causality'
+    abandoned = {row['subject'] for row in exported.get('audit', []) if row['kind'] == 'action-abandoned'}
+    report['administratively_abandoned_actions'] = len(abandoned)
+    report['pending_actions'] = sum(row['state'] in ('reserved', 'accepted', 'uncertain') and row.get('action_key') not in abandoned for row in exported['actions'])
+    report['audit_chain_valid'] = exported['chain_valid']
+    report['actions'] = {state: sum(row['state'] == state for row in exported['actions']) for state in ('reserved','accepted','uncertain','rejected','verified_success','verified_failure')}
+    return report
 
 
 def main(argv=None):
@@ -41,13 +61,11 @@ def main(argv=None):
             return 0
         if args.command == 'export':
             result = service.store.export()
+        elif args.command == 'abandon':
+            result = RemediationEngine(service.store, None, policy).abandon(args.action_key, operator=args.operator, reason=args.reason, executor_quiesced=args.executor_quiesced)
         elif args.command == 'report':
             exported = service.store.export()
-            records = [{'event': json.loads(row['event_json']), 'decision': json.loads(row['decision_json']), 'received_at': row['received_at']} for row in exported['events']]
-            # Do not count event-free action records as workflow conclusions.
-            report = summarize(records)
-            report['audit_chain_valid'] = exported['chain_valid']
-            report['actions'] = {state: sum(row['state'] == state for row in exported['actions']) for state in ('reserved','accepted','uncertain','rejected','verified_success','verified_failure')}
+            report = ledger_report(exported)
             result = generate_runbook(report) if args.runbook else report
         else:
             client = GitHubClient(os.environ.get('GITHUB_TOKEN', ''))
