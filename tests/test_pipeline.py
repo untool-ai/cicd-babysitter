@@ -44,6 +44,31 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(self.engine.retry(event(),self.decision)['duplicate'])
         self.assertEqual(self.client.calls,1)
         self.assertTrue(self.agent.store.verify())
+
+    def test_expired_reservation_recovers_to_uncertain_without_resubmitting(self):
+        self.policy['reservation_timeout_seconds'] = 10
+        self.engine.retry(event(), self.decision)
+        key = self.agent.store.db.execute('SELECT action_key FROM actions').fetchone()[0]
+        self.agent.store.db.execute("UPDATE actions SET state='reserved', created=100 WHERE action_key=?", (key,))
+        self.engine.clock = lambda: 111
+        result = self.engine.retry(event(), self.decision)
+        self.assertEqual(result['state'], 'uncertain')
+        self.assertTrue(result['recovered'])
+        self.assertEqual(self.client.calls, 1)
+        self.assertEqual(self.agent.store.db.execute(
+            'SELECT state FROM actions WHERE action_key=?', (key,)).fetchone()[0], 'uncertain')
+        self.assertTrue(any(row['kind'] == 'action-reservation-recovered'
+                            for row in self.agent.store.export()['audit']))
+
+    def test_fresh_reservation_remains_duplicate(self):
+        self.policy['reservation_timeout_seconds'] = 10
+        self.engine.retry(event(), self.decision)
+        key = self.agent.store.db.execute('SELECT action_key FROM actions').fetchone()[0]
+        self.agent.store.db.execute("UPDATE actions SET state='reserved', created=100 WHERE action_key=?", (key,))
+        self.engine.clock = lambda: 109
+        result = self.engine.retry(event(), self.decision)
+        self.assertEqual(result, {'state': 'reserved', 'duplicate': True, 'action_key': key})
+        self.assertEqual(self.client.calls, 1)
     def test_unknown_submission_never_retried(self):
         self.client.error=True
         result=self.engine.retry(event(),self.decision)

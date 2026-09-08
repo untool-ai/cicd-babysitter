@@ -65,8 +65,11 @@ class RemediationEngine:
             return self._refuse(event,'denied','Not a failed completed run')
         cap = self.policy.get('max_retries', 3)
         backoff = self.policy.get('retry_backoff_seconds', 60)
+        reservation_timeout = self.policy.get('reservation_timeout_seconds', 900)
         if type(cap) is not int or not 0 <= cap <= 3 or type(backoff) not in (int,float) or not 1 <= backoff <= 86400:
             raise ValueError('Invalid retry policy')
+        if type(reservation_timeout) is not int or not 1 <= reservation_timeout <= 86400:
+            raise ValueError('Invalid reservation policy')
         current = self.client.get_run(event['repository'], event['run_id'])
         if current.get('status') != 'completed' or current.get('conclusion') not in ('failure','timed_out','startup_failure') or current.get('head_sha') != event['sha'] or current.get('run_attempt') != event['attempt'] or current.get('workflow_id') != event['workflow_id']:
             return self._refuse(event,'denied','Current workflow identity/state changed')
@@ -74,8 +77,23 @@ class RemediationEngine:
         key = hashlib.sha256(f"retry:{incident}:{event['attempt']}".encode()).hexdigest()
         now = self.clock()
         with self.store.transaction():
-            prior = self.store.db.execute('SELECT state FROM actions WHERE action_key=?', (key,)).fetchone()
-            if prior: return {'state': 'abandoned' if self._abandoned(key) else prior['state'], 'duplicate': True, 'action_key': key}
+            prior = self.store.db.execute('SELECT state,created FROM actions WHERE action_key=?', (key,)).fetchone()
+            if prior:
+                if (prior['state'] == 'reserved'
+                        and now >= prior['created'] + reservation_timeout):
+                    # A crash may have occurred before the provider call or after it.
+                    # Mark the reservation uncertain rather than retrying blindly.
+                    self.store.db.execute(
+                        "UPDATE actions SET state='uncertain' WHERE action_key=? AND state='reserved'",
+                        (key,))
+                    self.store.audit('action-reservation-recovered', key, {
+                        'prior_state': 'reserved', 'state': 'uncertain',
+                        'reservation_age_seconds': now - prior['created'],
+                        'reason': 'reservation lease expired; provider outcome unknown'})
+                    return {'state': 'uncertain', 'duplicate': True,
+                            'recovered': True, 'action_key': key}
+                return {'state': 'abandoned' if self._abandoned(key) else prior['state'],
+                        'duplicate': True, 'action_key': key}
             used = self.store.db.execute('SELECT COUNT(*),MAX(created) FROM actions WHERE incident=?', (incident,)).fetchone()
             if used[0] >= cap:
                 self.store.audit('action-not-executed',event_key,{'reason':'Retry budget exhausted'})
