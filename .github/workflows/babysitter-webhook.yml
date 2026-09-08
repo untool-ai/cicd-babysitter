@@ -1,0 +1,46 @@
+name: Babysitter authenticated dispatch reconciliation
+# This is NOT an HTTP webhook receiver. The always-on receiver verifies signatures.
+# Dispatch only wakes a fresh provider read; payload content never authorizes actions.
+on:
+  repository_dispatch:
+    types: [babysitter-workflow-event]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: babysitter-dispatch
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Reconcile without trusting dispatch payload
+        env:
+          GITHUB_TOKEN: ${{ secrets.BABYSITTER_READ_TOKEN || github.token }}
+          SELF_REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir -p reports
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=json.loads(Path('config/org-ruleset.yaml').read_text())
+          p['allowed_repositories']=p.get('allowed_repositories') or [os.environ['SELF_REPOSITORY']]
+          p['dry_run']=True
+          Path('reports/observation-policy.json').write_text(json.dumps(p))
+          PY
+          python -m src.cli --config reports/observation-policy.json monitor --days 1
+          python -m src.cli export > reports/audit.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: babysitter-dispatch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/
+          retention-days: 7

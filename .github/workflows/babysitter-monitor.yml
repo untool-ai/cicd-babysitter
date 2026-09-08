@@ -1,0 +1,49 @@
+name: Babysitter observation reconciliation
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: babysitter-observation
+  cancel-in-progress: false
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Observe explicitly configured cohort
+        env:
+          GITHUB_TOKEN: ${{ secrets.BABYSITTER_READ_TOKEN || github.token }}
+          SELF_REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir -p reports
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=json.loads(Path('config/org-ruleset.yaml').read_text())
+          # Self-observation only when no wider cohort has been explicitly opted in.
+          p['allowed_repositories']=p.get('allowed_repositories') or [os.environ['SELF_REPOSITORY']]
+          p['dry_run']=True
+          Path('reports/observation-policy.json').write_text(json.dumps(p))
+          PY
+          python -m src.cli --config reports/observation-policy.json monitor --days 1
+          python -m src.cli export > reports/audit.json
+          python -m src.cli report > reports/metrics.json
+          python -m src.cli report --runbook > reports/runbook.md
+      - name: Preserve per-run observation evidence (not the production ledger)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: babysitter-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/
+          retention-days: 7
+          if-no-files-found: warn

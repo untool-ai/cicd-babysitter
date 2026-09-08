@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0",
+  "security_signatures": [
+    "secret leak",
+    "credential leak",
+    "exposed token",
+    "security alert",
+    "malware detected",
+    "secret scanning alert"
+  ],
+  "config_signatures": [
+    "configuration error",
+    "invalid configuration",
+    "missing required configuration",
+    "invalid yaml",
+    "workflow syntax error"
+  ],
+  "transient_signatures": [
+    "timeout",
+    "timed out",
+    "connection reset",
+    "econnreset",
+    "rate limit",
+    "http 429",
+    "too many requests"
+  ],
+  "systemic_min_samples": 10,
+  "flaky_min_samples": 20,
+  "flaky_success_rate_min": 0.5,
+  "flaky_success_rate_max": 0.8,
+  "allowed_repositories": [],
+  "dry_run": true,
+  "max_retries": 3,
+  "reservation_timeout_seconds": 900,
+  "allowed_workflows": [],
+  "retry_backoff_seconds": 60,
+  "enable_notifications": false,
+  "enable_issues": false
+}
