@@ -61,6 +61,56 @@ class ClientTests(unittest.TestCase):
             client.create_issue("untool-ai/test", "title", "body")
         self.assertTrue(error.exception.uncertain)
 
+    def test_list_repositories_excludes_archived_across_all_pages(self):
+        pages = [
+            [{"full_name": f"untool-ai/r{i}", "archived": i % 2 == 0} for i in range(100)],
+            [{"full_name": "untool-ai/last", "archived": False}],
+        ]
+        def open_(request, timeout):
+            page = int(request.full_url.rsplit("page=", 1)[1])
+            return Response(json.dumps(pages[page - 1]).encode())
+        result = GitHubClient("secret", max_pages=5, opener=open_).list_repositories()
+        self.assertFalse(result.truncated)
+        self.assertEqual(len(result.items), 51)
+        self.assertTrue(all(not repo["archived"] for repo in result.items))
+
+    def test_list_repositories_include_archived_opt_in(self):
+        def open_(request, timeout):
+            return Response(json.dumps([{"full_name": "untool-ai/x", "archived": True}]).encode())
+        result = GitHubClient("secret", opener=open_).list_repositories(include_archived=True)
+        self.assertEqual(len(result.items), 1)
+
+    def test_list_pull_requests_paginates_every_page(self):
+        calls = []
+        pages = [[{"number": n} for n in range(100)], [{"number": 100}]]
+        def open_(request, timeout):
+            calls.append(request.full_url)
+            page = int(request.full_url.rsplit("page=", 1)[1])
+            return Response(json.dumps(pages[page - 1]).encode())
+        result = GitHubClient("secret", opener=open_).list_pull_requests("untool-ai/test")
+        self.assertFalse(result.truncated)
+        self.assertEqual(len(result.items), 101)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("state=open", calls[0])
+
+    def test_list_pull_requests_rejects_invalid_state(self):
+        client = GitHubClient("secret", opener=lambda *a, **k: self.fail("network"))
+        with self.assertRaises(ValueError):
+            client.list_pull_requests("untool-ai/test", state="merged")
+
+    def test_required_status_contexts_missing_protection_is_empty(self):
+        def open_(request, timeout):
+            raise HTTPError("url", 404, "not found", {}, None)
+        result = GitHubClient("secret", opener=open_).get_required_status_contexts("untool-ai/test", "main")
+        self.assertEqual(result, [])
+
+    def test_required_status_contexts_merges_legacy_and_checks(self):
+        def open_(request, timeout):
+            self.assertIn("main/protection/required_status_checks", request.full_url)
+            return Response(json.dumps({"contexts": ["build"], "checks": [{"context": "Lint"}]}).encode())
+        result = GitHubClient("secret", opener=open_).get_required_status_contexts("untool-ai/test", "main")
+        self.assertEqual(result, ["Lint", "build"])
+
     def test_notification_does_not_send_github_token(self):
         def open_(request, timeout):
             self.assertIsNone(request.get_header("Authorization"))

@@ -30,6 +30,7 @@ For real-time ingress, inject `GITHUB_WEBHOOK_SECRET` and run `python -m src.cli
 ## What is implemented
 
 - GitHub repository/run pagination, bounded 30-day backfill, coverage/truncation reporting.
+- Read-only, org-wide health scan (`org-scan`): enumerates every active (non-archived) repository, paginates workflow runs and all open pull requests per repository, and prioritizes current default-branch/required-check regressions over already-superseded historical failures. Never mutates any repository.
 - Signed webhook receiver, normalized identities, restart-safe deduplication, rejection of altered-header replays.
 - Deterministic security/config/systemic/flaky/transient classification with sample thresholds and unknown-state handling.
 - Transactional append-only events/audit and hash-chain verification/export.
