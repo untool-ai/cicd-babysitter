@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 
@@ -88,8 +89,13 @@ class GitHubClient:
                 return PageResult(items, False, page)
         return PageResult(items, True, self.max_pages)
 
-    def list_repositories(self) -> PageResult:
-        return self._pages(f"/orgs/{self.org}/repos?type=all")
+    def list_repositories(self, *, include_archived: bool = False) -> PageResult:
+        """Enumerate every org repository across all pages (no first-page-only truncation)."""
+        result = self._pages(f"/orgs/{self.org}/repos?type=all")
+        if include_archived:
+            return result
+        active = [repo for repo in result.items if not repo.get("archived")]
+        return PageResult(active, result.truncated, result.pages)
 
     def list_workflow_runs(self, repository: str, *, days: int = 30,
                            now: datetime | None = None) -> PageResult:
@@ -97,6 +103,30 @@ class GitHubClient:
             raise ValueError("Backfill bounded to 1–30 days")
         cutoff = ((now or datetime.now(timezone.utc)) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         return self._pages(f"/repos/{self._repo(repository)}/actions/runs?created=%3E%3D{cutoff}", "workflow_runs")
+
+    def list_pull_requests(self, repository: str, *, state: str = "open") -> PageResult:
+        """Paginate every pull request page; never assume a single page is complete."""
+        if state not in ("open", "closed", "all"):
+            raise ValueError("Invalid pull request state filter")
+        return self._pages(f"/repos/{self._repo(repository)}/pulls?state={state}")
+
+    def get_required_status_contexts(self, repository: str, branch: str) -> list[str]:
+        """Read-only required-check contexts for a protected branch; [] if unprotected."""
+        if not isinstance(branch, str) or not 1 <= len(branch) <= 255:
+            raise ValueError("Invalid branch")
+        try:
+            payload = self._request(
+                f"/repos/{self._repo(repository)}/branches/{quote(branch, safe='')}/protection/required_status_checks")
+        except GitHubError as error:
+            if error.status == 404:
+                return []
+            raise
+        if not isinstance(payload, dict):
+            raise GitHubError()
+        names = {name for name in payload.get("contexts") or [] if isinstance(name, str)}
+        names |= {check.get("context") for check in payload.get("checks") or []
+                  if isinstance(check, dict) and isinstance(check.get("context"), str)}
+        return sorted(names)
 
     def get_run(self, repository: str, run_id: int) -> dict[str, Any]:
         result = self._request(f"/repos/{self._repo(repository)}/actions/runs/{self._id(run_id)}")

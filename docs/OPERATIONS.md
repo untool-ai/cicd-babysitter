@@ -11,6 +11,9 @@ Register the GitHub App/webhook for `workflow_run` events at `/webhook`. A GitHu
 ## Reconciliation / backfill
 Inject a read-only installation token, then `python -m src.cli --database state/babysitter.db monitor --days 30`. Up to 100 repositories per configured cohort; API pages are bounded, and truncation returns a failing coverage result rather than a complete claim. Split cohorts/time ranges or increase reviewed page limits when coverage is partial. Polling collects metadata, not full logs; absent diagnosis stays unknown. Raw workflow text is not automatically trusted as permission to remediate.
 
+## Org-wide read-only health scan
+`python -m src.cli --database state/babysitter.db org-scan --days 30` enumerates every active (non-archived) repository in the org across all pages, then paginates workflow runs and every open pull request per repository (no first-page-only assumption; a repository or pull-request list stopping mid-page marks `coverage_complete: false` and adds the repository to `truncated_repositories`). Receipts are prioritized: a failing run currently on the default branch or on an open PR's head commit (`default_branch_regression` / `pull_request_regression`, flagged `required_check: true` when the failing workflow matches a configured required status-check context) outranks a `superseded_historical_failure` — an earlier failure on the same branch/workflow that a later run has already replaced. This command never calls a mutating endpoint (no rerun, no merge, no issue creation) and never writes outside the local ledger's audit summary; it is safe to run against the whole org without any `allowed_repositories` opt-in.
+
 ## Reports and replay
 `python -m src.cli --database state/babysitter.db export`
 

@@ -18,6 +18,7 @@ def parser():
     p.add_argument('--database', default='state/babysitter.db')
     sub = p.add_subparsers(dest='command', required=True)
     poll = sub.add_parser('monitor'); poll.add_argument('--days', type=int, default=1)
+    scan = sub.add_parser('org-scan'); scan.add_argument('--days', type=int, default=30)
     server = sub.add_parser('serve'); server.add_argument('--host', default='127.0.0.1'); server.add_argument('--port', type=int, default=8788)
     sub.add_parser('export')
     report = sub.add_parser('report'); report.add_argument('--runbook', action='store_true')
@@ -75,6 +76,13 @@ def main(argv=None):
                 result = observe(client, repositories, days=args.days, handler=service.observe)
                 with service.store.transaction(): service.store.audit('reconciliation','poll',result)
                 print(json.dumps(result))
+                return 0 if result['coverage_complete'] else 2
+            if args.command == 'org-scan':
+                from .org_health import scan_organization
+                result = scan_organization(client, days=args.days)
+                summary = {k: v for k, v in result.items() if k != 'receipts'}
+                with service.store.transaction(): service.store.audit('reconciliation', 'org-scan', summary)
+                print(json.dumps(result, sort_keys=True))
                 return 0 if result['coverage_complete'] else 2
             engine = RemediationEngine(service.store,client,policy)
             if args.command == 'retry':
