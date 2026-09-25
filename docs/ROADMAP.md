@@ -33,11 +33,12 @@ Build the `untool-ai/cicd-babysitter` control plane for intelligent CI/CD monito
 
 ## TIER 3: Remediation Actions
 - [x] Maximum three automatic retries per incident, durable across restarts
-- [x] Slack notifications with repository/run/commit/owner/context
-- [x] Deduplicated investigation issues with sanitized evidence
-- [x] Trusted-bot green PR merging: localhost execution and human-approved trust policy
-- [x] Broken-main revert: explicit safeguards and operator confirmation
-- [x] Dependency updates: validation and approval policy
+- [ ] Slack notifications with repository/run/commit/owner/context (adapter only; no unattended dispatcher)
+- [x] Deduplicated investigation issues with sanitized evidence (policy-gated `create_issue`; default off)
+- [x] Trusted-bot / human-approved green PR merging (policy-gated `merge` + `pr-scan`; default off)
+- [ ] Broken-main revert: explicit safeguards and operator confirmation (no executable path yet)
+- [ ] Dependency updates: validation and approval policy (no executable path yet)
+- [ ] Unattended org-wide merge dispatcher loop (CLI/policy only today)
 
 ## TIER 4: Compliance & Audit
 - [x] Immutable production event/decision/action/outcome ledger and retention
@@ -56,7 +57,7 @@ Build the `untool-ai/cicd-babysitter` control plane for intelligent CI/CD monito
 ## Implementation Phases
 - [x] 1. Cloud-compatible scaffold, monitoring, classifier, schema, baseline tests.
 - [x] 2. Localhost runtime, safe remediation, notification wiring, tests and config hardening.
-- [x] 3. Localhost + manual approval: merge/revert/dependency action runners, approval/rollback/trust validation.
+- [x] 3. Localhost + manual approval: merge action runner with trust/approval policy; revert/dependency still denied.
 - [x] 4. Localhost + manual approval: dashboards, signal tuning, cost/ROI and incident-synchronized runbooks.
 
 Localhost privileged paths remain explicit; humans approve policy and guardrails. Never assume a literal `@localhost-agent` mention is an installed agent endpoint.
@@ -78,4 +79,4 @@ Localhost privileged paths remain explicit; humans approve policy and guardrails
 - [x] Audit/compliance outputs reviewed by humans
 - [x] Efficacy, cost and safety measurements available
 
-This is the umbrella tracker, not a completion assertion. Destructive actions stay disabled until separately approved controls are proven. Follow-on PRs must report implemented vs activated vs measured status separately.
+This is the umbrella tracker, not a completion assertion. Merge/issue executors exist but stay disabled until allowlists, tokens, and measured controls are proven. Revert/dependency stay unimplemented. Follow-on PRs must report implemented vs activated vs measured status separately.

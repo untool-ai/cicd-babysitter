@@ -4,9 +4,11 @@ Central observation and policy-gated remediation for `untool-ai` workflows. Road
 
 ## Architecture
 
-Signed workflow webhook / bounded API polling → repository opt-in → normalized event → duplicate-safe ledger → versioned heuristic classification → proposal → approved retry policy → durable budget reservation → single submission → provider outcome reconciliation → audit/report/runbook.
+Signed workflow webhook / bounded API polling → repository opt-in → normalized event → duplicate-safe ledger → versioned heuristic classification → proposal → approved action policy → durable budget reservation → single submission → provider outcome reconciliation → audit/report/runbook.
 
-The always-on webhook receiver commits before acknowledging. Scheduled Actions reconcile observations; they cannot guarantee 30-second latency. Hosted workflows never mutate monitored repositories. Local retry execution is explicit and defaults to disabled. MIND's host recovery is separate: this repository changes no Docker/WSL capacity or fleet services.
+PR path: org/repo PR scan → readiness receipt → optional ledger proposal → policy-gated merge (trusted author or human approval) → reconcile merged state.
+
+The always-on webhook receiver commits before acknowledging. Scheduled Actions reconcile observations; they cannot guarantee 30-second latency. Hosted workflows never mutate monitored repositories. Local executors are explicit and default to disabled. MIND's host recovery is separate: this repository changes no Docker/WSL capacity or fleet services.
 
 ## Quick start
 
@@ -21,6 +23,8 @@ Populate `config/org-ruleset.yaml` repository allowlist before monitoring; retai
 
 ```powershell
 python -m src.cli monitor --days 30
+python -m src.cli org-scan --days 30
+python -m src.cli pr-scan --record
 python -m src.cli report
 python -m src.cli report --runbook
 ```
@@ -30,20 +34,26 @@ For real-time ingress, inject `GITHUB_WEBHOOK_SECRET` and run `python -m src.cli
 ## What is implemented
 
 - GitHub repository/run pagination, bounded 30-day backfill, coverage/truncation reporting.
-- Read-only, org-wide health scan (`org-scan`): enumerates every active (non-archived) repository, paginates workflow runs and all open pull requests per repository, and prioritizes current default-branch/required-check regressions over already-superseded historical failures. Never mutates any repository.
+- Read-only, org-wide health scan (`org-scan`): enumerates every active repository, paginates workflow runs and open PRs, prioritizes current default-branch/required-check regressions.
+- Read-only PR readiness scan (`pr-scan`): checks, approvals, draft/conflict/merged blockers; optional ledger recording of merge proposals.
 - Signed webhook receiver, normalized identities, restart-safe deduplication, rejection of altered-header replays.
 - Deterministic security/config/systemic/flaky/transient classification with sample thresholds and unknown-state handling.
 - Transactional append-only events/audit and hash-chain verification/export.
-- Explicitly enabled retry executor: current-state recheck, durable max-three budget, exponential backoff, uncertain-submission handling, next-attempt outcome observation.
-- Low-level Slack and investigation-issue adapters; no unattended notification loop enabled.
+- Action-generic durable ledger (`retry`, `create_issue`, `merge`, …) with reservation, uncertain recovery, abandon, reconcile.
+- Explicitly enabled retry executor: current-state recheck, durable max-three budget, exponential backoff, uncertain-submission handling.
+- Explicitly enabled investigation issue executor (`enable_issues`): bound to recorded investigate/escalate decisions, deduplicated per incident.
+- Explicitly enabled merge executor (`enable_merge`): live readiness recheck, sha binding, required approvals, trusted authors and/or human approval, single submission, merge reconciliation.
+- Low-level Slack adapter; no unattended notification loop enabled.
 - Known/unknown metrics, explicit-price cost estimates, recommendation-only runbooks.
 - GitHub-hosted tests and observation workflows with read-only permissions and pinned actions.
 
 ## What is not yet enabled or proven
 
-No automatic merge/revert/dependency-update/quarantine executor. No production webhook installation or organization-wide token provisioning. No 30-second/95%/zero-security-miss measurement claim. SQLite triggers/hash chaining are local tamper evidence, not administrator-proof immutability or SOC 2 certification. Production role separation, external retention anchors and measured rollout acceptance remain open in the [roadmap](docs/ROADMAP.md).
+No automatic revert/dependency-update/open_pr/quarantine executor. No unattended merge dispatcher across the org (CLI/policy-gated only). No production webhook installation or organization-wide token provisioning. No 30-second/95%/zero-security-miss measurement claim. SQLite triggers/hash chaining are local tamper evidence, not administrator-proof immutability or SOC 2 certification. Production role separation, external retention anchors and measured rollout acceptance remain open in the [roadmap](docs/ROADMAP.md).
 
-The retry engine never accepts a caller-supplied decision as authority: it reads the recorded decision. Unknown submissions require reconciliation. Successful subsequent runs are observations, not proof the retry caused recovery.
+Defaults remain fail-closed: empty allowlists, `dry_run: true`, `enable_merge: false`, `enable_issues: false`.
+
+The engine never accepts a caller-supplied decision as authority: it reads the recorded decision. Unknown submissions require reconciliation. Successful subsequent runs or provider merge flags are observations, not exclusive causality proof.
 
 ## Guides
 - [Decision tree](docs/REMEDIATION_DECISION_TREE.md)
