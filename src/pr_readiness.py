@@ -10,7 +10,6 @@ from typing import Any
 
 from .github_client import GitHubClient, GitHubError
 
-_MERGEABLE_STATES = frozenset({"clean", "has_hooks", "unstable", "blocked", "behind", "dirty", "draft", "unknown"})
 _SUCCESS = frozenset({"success", "neutral", "skipped"})
 _PENDING = frozenset({"pending", "queued", "in_progress", "expected", "waiting", "requested"})
 _FAILURE = frozenset({"failure", "error", "timed_out", "cancelled", "startup_failure", "action_required", "stale"})

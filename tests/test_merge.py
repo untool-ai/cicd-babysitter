@@ -1,5 +1,4 @@
 """Merge, issue, and PR-readiness capability tests."""
-import hashlib
 import json
 import tempfile
 import unittest
@@ -10,7 +9,6 @@ from src.babysitter_agent import Babysitter
 from src.github_client import GitHubClient, GitHubError
 from src.pr_readiness import evaluate_pull, summarize_checks, scan_repository_pulls
 from src.remediation_engine import RemediationEngine
-from src.store import canonical
 
 
 def pr_event(number=7, sha=None, ready=True, author='trusted-bot[bot]', blockers=None):
