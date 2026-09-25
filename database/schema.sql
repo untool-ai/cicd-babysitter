@@ -18,6 +18,21 @@ CREATE TABLE IF NOT EXISTS actions (
  created REAL NOT NULL,
  state TEXT NOT NULL CHECK(state IN ('reserved','accepted','uncertain','rejected','verified_success','verified_failure'))
 );
+CREATE TABLE IF NOT EXISTS dispatches (
+ dispatch_key TEXT PRIMARY KEY,
+ incident TEXT NOT NULL,
+ repository TEXT NOT NULL,
+ subject_type TEXT NOT NULL CHECK(subject_type IN ('pull_request')),
+ subject_number INTEGER NOT NULL,
+ event_key TEXT NOT NULL REFERENCES events(event_key),
+ category TEXT NOT NULL,
+ size_tier TEXT NOT NULL,
+ agent TEXT NOT NULL,
+ estimated_cost_usd REAL NOT NULL,
+ budget_period TEXT NOT NULL,
+ created REAL NOT NULL,
+ state TEXT NOT NULL CHECK(state IN ('reserved','accepted','uncertain','rejected'))
+);
 CREATE TABLE IF NOT EXISTS audit (
  seq INTEGER PRIMARY KEY AUTOINCREMENT,
  timestamp TEXT NOT NULL,

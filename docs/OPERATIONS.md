@@ -24,7 +24,16 @@ Inject a read-only installation token, then `python -m src.cli --database state/
 Audit exports include event, decision, action and outcome state plus chain verification. Replay classifications over sanitized historical inputs into a separate database; do not replay external actions. Compare versioned ruleset decisions before promoting config changes. Keep measured unknown/missing fields in denominator reports. Cost estimates require explicit pricing and known duration; no invented saved dollars or human-toil savings.
 
 ## Enabling retries later
+
 Review exact repository/workflow IDs and set dry_run false only after a dedicated write-scoped token is configured. Submit a persisted event with `python -m src.cli retry --event-key <key>` and reconcile with `python -m src.cli reconcile --action-key <key>`. There is deliberately no unattended mutation loop enabled by deployment. A future dispatcher must use this same durable reservation boundary rather than bypass it. Retry counters survive restarts and uncertain actions consume their budget. Raising configured max_retries above three is rejected.
+
+## Enabling dispatch later
+
+Cloud-agent dispatch is disabled and `dry_run:true` by default (`config/org-ruleset.yaml`'s `dispatch` object). To opt a repository in: populate `dispatch.allowed_repositories`, set `dispatch.enabled:true`, review `dispatch.routing`/`dispatch.agent_labels`/`dispatch.agent_review_mentions` against the actual GitHub labels and mention conventions configured for that repository (see `docs/agent-routing.md`-style conventions in the target org's own docs; this repo does not assume any particular label exists), and only then set `dispatch.dry_run:false`. Submit a persisted event with `python -m src.cli dispatch --event-key <key>`; it re-derives the immutably recorded classification and refuses anything other than `config`/`systemic`/`unknown`.
+
+`dispatch.monthly_budget_usd` and `dispatch.estimated_cost_usd` are **operator-supplied estimates**, not a call to any billing API — this CLI never queries GitHub Copilot/Jules/Codex pricing. The cap is a **denial mode**: once the configured month's reserved/accepted/uncertain dispatches would exceed the cap, further dispatches for that month are refused; it does not stop, cancel or refund any external agent invocation already submitted, and it is not a hard spending guarantee against actual provider billing. An agent with no configured `estimated_cost_usd` entry is refused rather than treated as free. `python -m src.cli report` surfaces `dispatches`, `dispatches_by_agent` and `dispatch_budget_spent_usd_by_period` for review before raising the cap or adding a new agent.
+
+Dispatch mutations are label/comment only (`issues:write` scope) — there is no executable path in this release for the cloud agent's resulting pull request to be merged, reverted or otherwise mutated by the babysitter itself; existing required-status-checks and branch-protection review that PR exactly as any other.
 
 ## Closing an unresolved reservation safely
 

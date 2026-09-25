@@ -145,6 +145,25 @@ class GitHubClient:
             raise GitHubError(uncertain=True)
         return result
 
+    def add_labels(self, repository: str, number: int, labels: list[str]) -> list[dict[str, Any]]:
+        """Dispatch-only mutation: hands a PR to an already-trusted cloud agent via label routing."""
+        if not isinstance(labels, list) or not labels or any(
+                not isinstance(label, str) or not label.strip() or len(label) > 50 for label in labels):
+            raise ValueError("Invalid label list")
+        result = self._request(f"/repos/{self._repo(repository)}/issues/{self._id(number)}/labels", "POST", {"labels": labels})
+        if not isinstance(result, list):
+            raise GitHubError(uncertain=True)
+        return result
+
+    def create_comment(self, repository: str, number: int, body: str) -> dict[str, Any]:
+        """Dispatch-only mutation: e.g. an '@codex review' mention. Never merges or edits code."""
+        if not isinstance(body, str) or not body.strip() or len(body) > 65536:
+            raise ValueError("Invalid comment body")
+        result = self._request(f"/repos/{self._repo(repository)}/issues/{self._id(number)}/comments", "POST", {"body": body})
+        if not isinstance(result, dict) or not isinstance(result.get("id"), int):
+            raise GitHubError(uncertain=True)
+        return result
+
     def notify(self, payload: dict[str, Any], *, webhook_url: str | None = None) -> None:
         """Send only operator-configured Slack webhook notifications, never follow redirects."""
         import os

@@ -65,5 +65,6 @@ class Store:
     def export(self):
         return {'events': [dict(row) for row in self.db.execute('SELECT * FROM events ORDER BY received_at,event_key')],
                 'actions': [dict(row) for row in self.db.execute('SELECT * FROM actions ORDER BY created,action_key')],
+                'dispatches': [dict(row) for row in self.db.execute('SELECT * FROM dispatches ORDER BY created,dispatch_key')],
                 'audit': [dict(row) for row in self.db.execute('SELECT * FROM audit ORDER BY seq')],
                 'chain_valid': self.verify(), 'immutability': 'local-tamper-evidence-only'}

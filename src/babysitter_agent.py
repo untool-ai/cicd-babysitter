@@ -35,6 +35,12 @@ def normalize(event):
         if value is not None and (not isinstance(value, str) or len(value) > 40):
             raise ValueError('Invalid timestamp')
         result[key] = value
+    # Optional dispatch-sizing metadata: absent by default, never inferred or defaulted to zero.
+    for key in ('pull_number', 'changed_files', 'additions', 'deletions'):
+        value = event.get(key)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+            raise ValueError('Invalid dispatch sizing field')
+        result[key] = value
     return result
 
 
