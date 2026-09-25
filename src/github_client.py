@@ -145,6 +145,71 @@ class GitHubClient:
             raise GitHubError(uncertain=True)
         return result
 
+    def get_pull(self, repository: str, number: int) -> dict[str, Any]:
+        """Read a single pull request; number must be a positive int."""
+        result = self._request(f"/repos/{self._repo(repository)}/pulls/{self._id(number)}")
+        if not isinstance(result, dict) or result.get("number") != number:
+            raise GitHubError()
+        return result
+
+    def get_combined_status(self, repository: str, sha: str) -> dict[str, Any]:
+        """Combined commit status for a head SHA (legacy status API)."""
+        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+            raise ValueError("Invalid commit sha")
+        result = self._request(f"/repos/{self._repo(repository)}/commits/{sha}/status")
+        if not isinstance(result, dict):
+            raise GitHubError()
+        return result
+
+    def list_check_runs(self, repository: str, sha: str) -> dict[str, Any]:
+        """Check-runs for a head SHA; single page capped by API default bounds."""
+        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+            raise ValueError("Invalid commit sha")
+        result = self._request(f"/repos/{self._repo(repository)}/commits/{sha}/check-runs?per_page=100")
+        if not isinstance(result, dict) or not isinstance(result.get("check_runs"), list):
+            raise GitHubError()
+        return result
+
+    def get_pull_approval_count(self, repository: str, number: int) -> int:
+        """Count latest APPROVED reviews per unique user (dismissals reduce count)."""
+        result = self._pages(f"/repos/{self._repo(repository)}/pulls/{self._id(number)}/reviews")
+        latest: dict[str, str] = {}
+        for review in result.items:
+            user = review.get("user")
+            state = review.get("state")
+            if not isinstance(user, dict) or not isinstance(user.get("login"), str):
+                continue
+            if not isinstance(state, str):
+                continue
+            latest[user["login"]] = state.upper()
+        return sum(1 for state in latest.values() if state == "APPROVED")
+
+    def merge_pull(self, repository: str, number: int, *, head_sha: str,
+                   merge_method: str = "squash", commit_title: str | None = None) -> dict[str, Any]:
+        """Merge a pull request only when head_sha still matches; no automatic retry."""
+        if merge_method not in ("merge", "squash", "rebase"):
+            raise ValueError("Invalid merge method")
+        if not isinstance(head_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+            raise ValueError("Invalid commit sha")
+        payload: dict[str, Any] = {"merge_method": merge_method, "sha": head_sha}
+        if commit_title is not None:
+            if not isinstance(commit_title, str) or not 1 <= len(commit_title) <= 256:
+                raise ValueError("Invalid commit title")
+            payload["commit_title"] = commit_title
+        result = self._request(
+            f"/repos/{self._repo(repository)}/pulls/{self._id(number)}/merge", "PUT", payload)
+        if not isinstance(result, dict):
+            raise GitHubError(uncertain=True)
+        return result
+
+    def update_pull_branch(self, repository: str, number: int) -> dict[str, Any]:
+        """Update a PR branch with the base branch; uncertain on transport failure."""
+        result = self._request(
+            f"/repos/{self._repo(repository)}/pulls/{self._id(number)}/update-branch", "PUT", {})
+        if not isinstance(result, dict):
+            raise GitHubError(uncertain=True)
+        return result
+
     def notify(self, payload: dict[str, Any], *, webhook_url: str | None = None) -> None:
         """Send only operator-configured Slack webhook notifications, never follow redirects."""
         import os

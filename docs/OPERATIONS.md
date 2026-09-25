@@ -23,7 +23,31 @@ Inject a read-only installation token, then `python -m src.cli --database state/
 
 Audit exports include event, decision, action and outcome state plus chain verification. Replay classifications over sanitized historical inputs into a separate database; do not replay external actions. Compare versioned ruleset decisions before promoting config changes. Keep measured unknown/missing fields in denominator reports. Cost estimates require explicit pricing and known duration; no invented saved dollars or human-toil savings.
 
+## PR readiness and merge
+
+`python -m src.cli pr-scan` evaluates open PR checks/approvals/conflicts read-only. Add `--record` to persist merge/wait proposals for opted-in repositories (`allowed_repositories` or `allowed_merge_repositories`).
+
+Merging requires all of: `dry_run:false`, `enable_merge:true`, repository on the merge allowlist, a recorded merge proposal for the exact head SHA, live readiness recheck, sufficient approvals, and either a `trusted_merge_authors` match or CLI human approval:
+
+```
+python -m src.cli merge --event-key <key> --operator oncall --reason "green trusted PR"
+python -m src.cli reconcile --action-key <key>
+```
+
+Uncertain merge submissions never resubmit automatically. Hosted Actions workflows remain read-only; merges run only from an explicit local/operator executor.
+
+## Investigation issues
+
+With `enable_issues:true`, `dry_run:false`, and repository opt-in:
+
+```
+python -m src.cli create-issue --event-key <key>
+```
+
+Issues are deduplicated per repository/run/sha/category and omit raw logs.
+
 ## Enabling retries later
+
 Review exact repository/workflow IDs and set dry_run false only after a dedicated write-scoped token is configured. Submit a persisted event with `python -m src.cli retry --event-key <key>` and reconcile with `python -m src.cli reconcile --action-key <key>`. There is deliberately no unattended mutation loop enabled by deployment. A future dispatcher must use this same durable reservation boundary rather than bypass it. Retry counters survive restarts and uncertain actions consume their budget. Raising configured max_retries above three is rejected.
 
 ## Closing an unresolved reservation safely

@@ -29,11 +29,17 @@
   "flaky_success_rate_min": 0.5,
   "flaky_success_rate_max": 0.8,
   "allowed_repositories": [],
+  "allowed_merge_repositories": [],
+  "allowed_workflows": [],
   "dry_run": true,
   "max_retries": 3,
   "reservation_timeout_seconds": 900,
-  "allowed_workflows": [],
   "retry_backoff_seconds": 60,
   "enable_notifications": false,
-  "enable_issues": false
+  "enable_issues": false,
+  "enable_merge": false,
+  "merge_method": "squash",
+  "merge_required_approvals": 1,
+  "merge_require_human_approval": true,
+  "trusted_merge_authors": []
 }

@@ -95,7 +95,8 @@ class PipelineTests(unittest.TestCase):
     def test_dry_run_and_high_trust_denial(self):
         self.policy['dry_run']=True
         self.assertEqual(self.engine.retry(event(),self.decision)['state'],'dry-run')
-        for name in ('merge','revert','update','quarantine'):
+        # merge/create_issue are implemented but still fail-closed without policy + binding.
+        for name in ('revert','update','quarantine','open_pr'):
             with self.assertRaises(PermissionError): self.engine.execute(name)
         self.assertEqual(self.client.calls,0)
     def test_current_state_commit_and_workflow_rechecked(self):

@@ -38,6 +38,35 @@ def normalize(event):
     return result
 
 
+def normalize_pr(event):
+    """Normalize a pull-request readiness snapshot for ledger binding."""
+    if not isinstance(event, dict):
+        raise ValueError('PR event must be an object')
+    repository = event.get('repository')
+    if not isinstance(repository, str) or not re.fullmatch(r'untool-ai/[A-Za-z0-9_.-]+', repository):
+        raise ValueError('Invalid repository')
+    number = event.get('number')
+    if type(number) is not int or number <= 0:
+        raise ValueError('Invalid pull request number')
+    head_sha = event.get('head_sha')
+    if not isinstance(head_sha, str) or not re.fullmatch(r'[a-f0-9]{40}', head_sha):
+        raise ValueError('Invalid head sha')
+    clean = {
+        'kind': 'pull_request',
+        'repository': repository,
+        'number': number,
+        'head_sha': head_sha,
+        'base_ref': event.get('base_ref') if isinstance(event.get('base_ref'), str) else '',
+        'author': event.get('author') if isinstance(event.get('author'), str) else None,
+        'draft': bool(event.get('draft')),
+        'merged': bool(event.get('merged')),
+        'ready': bool(event.get('ready')),
+        'blockers': list(event.get('blockers') or []) if isinstance(event.get('blockers'), list) else [],
+        'approvals': event.get('approvals') if type(event.get('approvals')) is int else 0,
+    }
+    return clean
+
+
 class Babysitter:
     def __init__(self, database, policy):
         self.store = Store(database)
@@ -55,6 +84,36 @@ class Babysitter:
         decision = classify({**clean, 'evidence': event.get('evidence', []), 'history': event.get('history', [])}, policy=self.policy)
         decision.update(mode='proposal', executed=False)
         return self.store.record(key, delivery_id or 'poll-' + key, payload_sha or hashlib.sha256(canonical(clean).encode()).hexdigest(), clean, decision)
+
+    def observe_pr(self, event, delivery_id=None, payload_sha=None):
+        """Record a PR readiness snapshot and a merge/wait proposal. Never merges."""
+        clean = normalize_pr(event)
+        opted = set(self.policy.get('allowed_repositories') or []) | set(
+            self.policy.get('allowed_merge_repositories') or [])
+        if clean['repository'] not in opted:
+            raise PermissionError('Repository not opted in')
+        identity = {k: clean[k] for k in ('kind', 'repository', 'number', 'head_sha')}
+        key = hashlib.sha256(canonical(identity).encode()).hexdigest()
+        if clean.get('merged'):
+            decision = {
+                'category': 'merged', 'action': 'none', 'rule': 'pr-already-merged',
+                'reason': 'Pull request already merged; no action proposed.',
+            }
+        elif clean.get('ready'):
+            decision = {
+                'category': 'merge_ready', 'action': 'merge', 'rule': 'pr-ready',
+                'reason': 'Pull request readiness checks passed; merge proposed under policy.',
+            }
+        else:
+            decision = {
+                'category': 'merge_blocked', 'action': 'wait', 'rule': 'pr-blocked',
+                'reason': 'Pull request not ready: ' + ','.join(clean.get('blockers') or ['unknown']),
+            }
+        decision.update(mode='proposal', executed=False)
+        return self.store.record(
+            key, delivery_id or 'pr-' + key,
+            payload_sha or hashlib.sha256(canonical(clean).encode()).hexdigest(),
+            clean, decision)
 
     def ingest(self, raw, signature, delivery_id, event_type, secret):
         if not isinstance(secret, bytes) or not secret:

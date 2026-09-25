@@ -9,14 +9,18 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE TABLE IF NOT EXISTS actions (
  action_key TEXT PRIMARY KEY,
+ action_type TEXT NOT NULL DEFAULT 'retry'
+  CHECK(action_type IN ('retry','create_issue','merge','update_branch','open_pr','revert')),
  incident TEXT NOT NULL,
  repository TEXT NOT NULL,
- run_id INTEGER NOT NULL,
- attempt INTEGER NOT NULL,
- sha TEXT NOT NULL,
+ run_id INTEGER NOT NULL DEFAULT 0,
+ attempt INTEGER NOT NULL DEFAULT 0,
+ sha TEXT NOT NULL DEFAULT '',
+ pr_number INTEGER,
  event_key TEXT NOT NULL REFERENCES events(event_key),
  created REAL NOT NULL,
- state TEXT NOT NULL CHECK(state IN ('reserved','accepted','uncertain','rejected','verified_success','verified_failure'))
+ state TEXT NOT NULL CHECK(state IN ('reserved','accepted','uncertain','rejected','verified_success','verified_failure')),
+ detail_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS audit (
  seq INTEGER PRIMARY KEY AUTOINCREMENT,
