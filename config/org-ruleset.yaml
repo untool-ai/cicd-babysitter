@@ -35,5 +35,35 @@
   "allowed_workflows": [],
   "retry_backoff_seconds": 60,
   "enable_notifications": false,
-  "enable_issues": false
+  "enable_issues": false,
+  "dispatch": {
+    "enabled": false,
+    "dry_run": true,
+    "allowed_repositories": [],
+    "size_tiers": {
+      "xs_max_changed_files": 3,
+      "s_max_changed_files": 10,
+      "m_max_changed_files": 30
+    },
+    "routing": {
+      "xs": "copilot",
+      "s": "copilot",
+      "m": "jules",
+      "l": "jules",
+      "unsized": "codex"
+    },
+    "agent_labels": {
+      "copilot": "copilot-task",
+      "jules": "jules"
+    },
+    "agent_review_mentions": {
+      "codex": "@codex review"
+    },
+    "monthly_budget_usd": 50.0,
+    "estimated_cost_usd": {
+      "copilot": 0.0,
+      "jules": 0.0,
+      "codex": 0.0
+    }
+  }
 }

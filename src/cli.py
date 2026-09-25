@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .analytics import summarize, generate_runbook
 from .babysitter_agent import Babysitter
+from .dispatch_engine import DispatchEngine
 from .github_client import GitHubClient
 from .monitor import observe
 from .remediation_engine import RemediationEngine
@@ -22,6 +23,7 @@ def parser():
     sub.add_parser('export')
     report = sub.add_parser('report'); report.add_argument('--runbook', action='store_true')
     retry = sub.add_parser('retry'); retry.add_argument('--event-key', required=True)
+    dispatch = sub.add_parser('dispatch'); dispatch.add_argument('--event-key', required=True)
     reconcile = sub.add_parser('reconcile'); reconcile.add_argument('--action-key', required=True)
     abandon = sub.add_parser('abandon'); abandon.add_argument('--action-key', required=True); abandon.add_argument('--operator', required=True); abandon.add_argument('--reason', required=True); abandon.add_argument('--executor-quiesced', action='store_true')
     return p
@@ -43,6 +45,14 @@ def ledger_report(exported):
     report['pending_actions'] = sum(row['state'] in ('reserved', 'accepted', 'uncertain') and row.get('action_key') not in abandoned for row in exported['actions'])
     report['audit_chain_valid'] = exported['chain_valid']
     report['actions'] = {state: sum(row['state'] == state for row in exported['actions']) for state in ('reserved','accepted','uncertain','rejected','verified_success','verified_failure')}
+    dispatches = exported.get('dispatches', [])
+    report['dispatches'] = {state: sum(row['state'] == state for row in dispatches) for state in ('reserved','accepted','uncertain','rejected')}
+    report['dispatches_by_agent'] = {agent: sum(row['agent'] == agent for row in dispatches) for agent in sorted({row['agent'] for row in dispatches})}
+    spent_states = ('reserved', 'accepted', 'uncertain')
+    report['dispatch_budget_spent_usd_by_period'] = {
+        period: sum(row['estimated_cost_usd'] for row in dispatches if row['budget_period'] == period and row['state'] in spent_states)
+        for period in sorted({row['budget_period'] for row in dispatches})}
+    report['dispatch_cost_basis'] = 'caller-configured-estimated-cost-usd; not measured provider billing'
     return report
 
 
@@ -81,6 +91,10 @@ def main(argv=None):
                 row = service.store.db.execute('SELECT * FROM events WHERE event_key=?',(args.event_key,)).fetchone()
                 if not row: raise ValueError('Unknown event')
                 result = engine.retry(json.loads(row['event_json']),json.loads(row['decision_json']))
+            elif args.command == 'dispatch':
+                row = service.store.db.execute('SELECT * FROM events WHERE event_key=?',(args.event_key,)).fetchone()
+                if not row: raise ValueError('Unknown event')
+                result = DispatchEngine(service.store,client,policy).dispatch(json.loads(row['event_json']),json.loads(row['decision_json']))
             else: result = engine.reconcile(args.action_key)
         print(result if isinstance(result,str) else json.dumps(result,sort_keys=True))
         return 0

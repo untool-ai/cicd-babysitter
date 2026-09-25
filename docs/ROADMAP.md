@@ -39,6 +39,16 @@ Build the `untool-ai/cicd-babysitter` control plane for intelligent CI/CD monito
 - [x] Broken-main revert: explicit safeguards and operator confirmation
 - [x] Dependency updates: validation and approval policy
 
+## TIER 3.5: Cloud-Agent Dispatch (GitHub-hosted, no localhost dependency)
+- [x] `src/dispatch_engine.py`: category-gated (`config`/`systemic`/`unknown` only; never `security`/`healthy`), size-tiered routing (`xs`/`s`/`m`/`l`/`unsized`) from an optional changed-file count
+- [x] Durable crash-safe reservation (`dispatches` table), same idempotency-key pattern as the retry executor
+- [x] Monthly USD budget cap (`monthly_budget_usd`), keyed by UTC month; denies rather than assumes free on unknown agent cost
+- [x] Dispatch-only GitHub mutations: `add_labels` (routes to Copilot coding agent / Jules) and `create_comment` (`@codex review`) — no merge, revert or contents-write role
+- [x] CLI `dispatch --event-key` subcommand and `report` budget/agent metrics
+- [x] Disabled and `dry_run:true` by default; a repository must be explicitly opted in
+- [ ] Production scheduling wired into a GitHub Actions dispatch workflow with a real dispatchable-event enumeration (currently a documented follow-up; the shipped workflow keeps its executable steps to observe/export/report)
+- [ ] Measured cost/ROI against actual GitHub Copilot/Jules/Codex billing (currently operator-supplied estimates only)
+
 ## TIER 4: Compliance & Audit
 - [x] Immutable production event/decision/action/outcome ledger and retention
 - [x] Role enforcement by repository, branch and action class
